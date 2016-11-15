@@ -1,6 +1,6 @@
-from __future__ import absolute_import, division, print_function
 import json
 import re
+import os
 from os import listdir
 from os.path import abspath, relpath, dirname, join
 import webbrowser
@@ -14,16 +14,26 @@ from gevent.wsgi import WSGIServer
 from scipy.misc import imsave
 
 from quiver_engine.imagenet_utils import decode_predictions
+
 from quiver_engine.util import deprocess_image, load_img, get_json
 from quiver_engine.layer_result_generators import get_outputs_generator
 
 import tensorflow as tf
+
 graph = tf.get_default_graph()
 
 
-def get_app(model, temp_folder='./tmp', input_folder='./'):
+def get_app(model, html_base_dir, temp_folder='./tmp', input_folder='./'):
+    """
+    The base of the Flask application to be run
+    :param model: the model to show
+    :param html_base_dir: the directory for the HTML (usually inside the packages,
+        quiverboard/dist must be a subdirectory)
+    :param temp_folder: where the temporary image data should be saved
+    :param input_folder: the image directory for the raw data
+    :return:
+    """
     single_input_shape = model.inputs[0].get_shape()[1:3]
-
     app = Flask(__name__)
     app.threaded = True
     CORS(app)
@@ -32,7 +42,7 @@ def get_app(model, temp_folder='./tmp', input_folder='./'):
     def home():
         return send_from_directory(
             join(
-                dirname(dirname(abspath(__file__))),
+                html_base_dir,
                 'quiverboard/dist'
             ),
             'index.html'
@@ -41,7 +51,7 @@ def get_app(model, temp_folder='./tmp', input_folder='./'):
     @app.route('/<path>')
     def get_board_files(path):
         return send_from_directory(join(
-            dirname(dirname(abspath(__file__))),
+            html_base_dir,
             'quiverboard/dist'
         ), path)
 
@@ -50,9 +60,9 @@ def get_app(model, temp_folder='./tmp', input_folder='./'):
         image_regex = re.compile(r".*\.(jpg|png|gif)$")
 
         return jsonify([
-            filename for filename in listdir(input_folder)
-            if image_regex.match(filename) is not None
-        ])
+                           filename for filename in listdir(input_folder)
+                           if image_regex.match(filename) is None
+                           ])
 
     @app.route('/temp-file/<path>')
     def get_temp_file(path):
@@ -68,17 +78,14 @@ def get_app(model, temp_folder='./tmp', input_folder='./'):
 
     @app.route('/layer/<layer_name>/<input_path>')
     def get_layer_outputs(layer_name, input_path):
-
         input_img = load_img(input_path, single_input_shape)
         output_generator = get_outputs_generator(model, layer_name)
 
         with graph.as_default():
-
             layer_outputs = output_generator(input_img)[0]
             output_files = []
 
             for z in range(0, layer_outputs.shape[2]):
-
                 img = layer_outputs[:, :, z]
                 deprocessed = deprocess_image(img)
                 filename = get_output_name(temp_folder, layer_name, input_path, z)
@@ -113,14 +120,22 @@ def run_app(app, port=5000):
     http_server.serve_forever()
 
 
-def launch(model, temp_folder='./tmp', input_folder='./', port=5000):
+def launch(model, temp_folder='./tmp', input_folder='./', port=5000, html_base_dir=None):
+    html_base_dir = html_base_dir if html_base_dir is not None else dirname(dirname(abspath(__file__)))
+    print('Starting webserver from:', html_base_dir)
+    assert os.path.exists(os.path.join(html_base_dir, "quiverboard")), "Quiverboard must be a " \
+                                                                       "subdirectory of {}".format(html_base_dir)
+    assert os.path.exists(os.path.join(html_base_dir, "quiverboard", "dist")), "Dist must be a " \
+                                                                               "subdirectory of quiverboard"
+    assert os.path.exists(
+        os.path.join(html_base_dir, "quiverboard", "dist", "index.html")), "Index.html missing"
+
     return run_app(
-        get_app(model, temp_folder, input_folder),
+        get_app(model, html_base_dir=html_base_dir,
+                temp_folder=temp_folder, input_folder=input_folder),
         port
     )
 
 
 def get_output_name(temp_folder, layer_name, input_path, z_idx):
     return temp_folder + '/' + layer_name + '_' + str(z_idx) + '_' + input_path + '.png'
-
-
