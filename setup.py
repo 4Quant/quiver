@@ -10,6 +10,7 @@ setup(
     packages=find_packages(),
     install_requires=[
         'keras',
+        'tensorflow',
         'flask',
         'flask_cors',
         'gevent',

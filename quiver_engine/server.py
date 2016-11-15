@@ -1,10 +1,9 @@
+from __future__ import absolute_import, division, print_function
 import json
 import re
 from os import listdir
 from os.path import abspath, relpath, dirname, join
 import webbrowser
-
-import numpy as np
 
 from flask import Flask, send_from_directory
 from flask.json import jsonify
@@ -14,12 +13,13 @@ from gevent.wsgi import WSGIServer
 
 from scipy.misc import imsave
 
-from imagenet_utils import decode_predictions
-from util import deprocess_image, load_img, get_json
-from layer_result_generators import get_outputs_generator
+from quiver_engine.imagenet_utils import decode_predictions
+from quiver_engine.util import deprocess_image, load_img, get_json
+from quiver_engine.layer_result_generators import get_outputs_generator
 
 import tensorflow as tf
 graph = tf.get_default_graph()
+
 
 def get_app(model, temp_folder='./tmp', input_folder='./'):
     single_input_shape = model.inputs[0].get_shape()[1:3]
@@ -51,7 +51,7 @@ def get_app(model, temp_folder='./tmp', input_folder='./'):
 
         return jsonify([
             filename for filename in listdir(input_folder)
-            if image_regex.match(filename) != None
+            if image_regex.match(filename) is not None
         ])
 
     @app.route('/temp-file/<path>')
@@ -91,6 +91,7 @@ def get_app(model, temp_folder='./tmp', input_folder='./'):
                 imsave(filename, deprocessed)
 
         return jsonify(output_files)
+
     @app.route('/predict/<input_path>')
     def get_prediction(input_path):
         input_img = load_img(input_path, single_input_shape)
@@ -103,19 +104,21 @@ def get_app(model, temp_folder='./tmp', input_folder='./'):
                 )
             )
 
-
     return app
+
 
 def run_app(app, port=5000):
     http_server = WSGIServer(('', port), app)
     webbrowser.open_new('http://localhost:' + str(port))
     http_server.serve_forever()
 
+
 def launch(model, temp_folder='./tmp', input_folder='./', port=5000):
     return run_app(
         get_app(model, temp_folder, input_folder),
         port
     )
+
 
 def get_output_name(temp_folder, layer_name, input_path, z_idx):
     return temp_folder + '/' + layer_name + '_' + str(z_idx) + '_' + input_path + '.png'
